@@ -17,82 +17,130 @@ Draw images in Minecraft using mcpylib! This program converts any image into Min
 
 ## Installation
 
-1. Install dependencies:
+1. Clone the repository:
+```bash
+git clone https://github.com/treeleaves30760/MCPyLib_Map_Art.git
+cd MCPyLib_Map_Art
+```
+
+2. Install dependencies using uv:
 ```bash
 uv sync
 ```
 
 Or with pip:
 ```bash
-pip install -r pyproject.toml
+pip install -e .
+```
+
+3. Configure environment variables:
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set your server credentials:
+```
+SERVER_IP=127.0.0.1
+SERVER_PORT=65535
+SERVER_TOKEN=your_token_here
 ```
 
 ## Usage
 
-Run the program:
+### Using the CLI Tool
+
+After installation, you can use the `mcpylib-map-art` command:
+
 ```bash
-uv run python main.py
+# Basic usage (uses .env configuration)
+mcpylib-map-art image.jpg
+
+# With uv
+uv run mcpylib-map-art image.jpg
+
+# Specify mode
+mcpylib-map-art image.jpg --mode 3d
+
+# Custom size and colors
+mcpylib-map-art image.jpg --size 256 --colors 35
+
+# Vertical wall drawing
+mcpylib-map-art image.jpg --mode vertical
+
+# Override environment variables
+mcpylib-map-art image.jpg --ip 192.168.1.100 --port 25565 --token your_token
+
+# Specify coordinates manually
+mcpylib-map-art image.jpg --x 100 --y 64 --z 200
 ```
 
-Or:
-```bash
-python main.py
-```
+### Command Options
 
-### Input Prompts
+- `IMAGE_PATH` - Path to the image file (required)
+- `--ip` - Minecraft server IP (default: from SERVER_IP env)
+- `--port` - Minecraft server port (default: from SERVER_PORT env)
+- `--token` - Authentication token (default: from SERVER_TOKEN env)
+- `--player` - Player name to get position from (default: TLSChannel)
+- `--size` - Maximum image size in blocks (default: 512)
+- `--colors` - Number of colors/k-means clusters (default: 61)
+- `--mode` - Drawing mode: `flat`, `3d`, or `vertical` (default: flat)
+- `--x`, `--y`, `--z` - Starting coordinates (overrides player position)
 
-The program will ask you for:
+### Environment Variables
 
-1. **Server IP** - Your Minecraft server IP (default: 127.0.0.1)
-2. **Server Port** - Your Minecraft server port (default: 65535)
-3. **Authentication Token** - Your mcpylib authentication token
-4. **Image File Path** - Path to your image file (e.g., `image.png` or `C:\images\photo.jpg`)
-5. **Max Size** - Maximum width/height in blocks (default: 32)
-6. **Orientation** - Draw horizontal (h) or vertical (v) (default: h)
-7. **Starting Coordinates** - X, Y, Z coordinates where the image will start (default: 0, 64, 0)
+The tool supports the following environment variables (configured in `.env`):
+
+- `SERVER_IP` - Minecraft server IP address
+- `SERVER_PORT` - Minecraft server port
+- `SERVER_TOKEN` - MCPyLib authentication token
+
+Command-line options override environment variables.
 
 ### Example Session
 
-```
+```bash
+$ mcpylib-map-art Logo.jpg --mode flat --size 128
 ============================================================
-Minecraft Image Drawer using mcpylib
+MCPyLib Map Art - Modern Map Art Algorithm
 ============================================================
 
-Minecraft Server Connection:
-Enter server IP (default: 127.0.0.1): 127.0.0.1
-Enter server port (default: 65535): 65535
-Enter authentication token: your_token_here
+Connecting to server: 127.0.0.1:65535
 Connected to Minecraft server at 127.0.0.1:65535
+Using TLSChannel's position: (100, 64, 200)
 
-Image Settings:
-Enter image file path: my_image.png
-Enter max size (width/height in blocks, default: 32): 50
-Draw horizontal (h) or vertical (v)? (default: h): v
+Image: Logo.jpg
+Max size: 128 blocks
+Colors: 61
+Mode: flat
 
-Starting Coordinates:
-Enter X coordinate (default: 0): 100
-Enter Y coordinate (default: 64): 64
-Enter Z coordinate (default: 0): 200
+=== K-Means Color Quantization (Modern Map Art Algorithm) ===
+Reducing to 61 most important colors...
 
-============================================================
-Drawing image vertically at (100, 64, 200)
-Loaded image: 800x600 pixels
-Resized to: 50x37 pixels
-Successfully placed 1850 blocks vertically!
-Image drawn at coordinates: (100, 64, 200) to (150, 101, 200)
-============================================================
+[1/3] Finding dominant colors in image...
+[2/3] Mapping to Minecraft palette...
+[3/3] Applying quantization...
+
+Placing 128x96 blocks in Minecraft...
+SUCCESS! Placed 12,288 blocks total
 
 Done! Check your Minecraft world.
 ```
 
 ## Drawing Modes
 
-### Horizontal Mode (h)
+### Flat Mode (`--mode flat`)
 - Draws the image flat on the ground (XZ plane)
 - Perfect for pixel art floors, maps, or ground decorations
 - Y coordinate is constant (one layer thick)
+- Default mode
 
-### Vertical Mode (v)
+### 3D Mode (`--mode 3d`)
+- Creates 3D staircase map art with height variations
+- Uses brightness to determine height changes
+- Full height range from Y=-60 to Y=319
+- Perfect for realistic map art with depth and shading
+
+### Vertical Mode (`--mode vertical`)
 - Draws the image as a wall (XY plane)
 - Perfect for paintings, murals, or vertical pixel art
 - Z coordinate is constant (one block deep)

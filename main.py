@@ -4,6 +4,11 @@ import sys
 import os
 import numpy as np
 from sklearn.cluster import KMeans
+import click
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class MinecraftImageDrawer:
@@ -627,51 +632,78 @@ class MinecraftImageDrawer:
             print(f"Error: {e}")
 
 
-def main():
+@click.command()
+@click.argument('image_path', type=click.Path(exists=True))
+@click.option('--ip', default=None, help='Minecraft server IP (env: SERVER_IP)')
+@click.option('--port', default=None, type=int, help='Minecraft server port (env: SERVER_PORT)')
+@click.option('--token', default=None, help='MCPyLib authentication token (env: SERVER_TOKEN)')
+@click.option('--player', default="TLSChannel", help='Player name to get position from')
+@click.option('--size', default=512, type=int, help='Maximum image size in blocks')
+@click.option('--colors', default=61, type=int, help='Number of colors to use (k-means clusters)')
+@click.option('--mode', type=click.Choice(['flat', '3d', 'vertical'], case_sensitive=False),
+              default='flat', help='Drawing mode: flat (2D horizontal), 3d (3D staircase), or vertical')
+@click.option('--x', default=None, type=int, help='Starting X coordinate (overrides player position)')
+@click.option('--y', default=None, type=int, help='Starting Y coordinate (overrides player position)')
+@click.option('--z', default=None, type=int, help='Starting Z coordinate (overrides player position)')
+def cli(image_path, ip, port, token, player, size, colors, mode, x, y, z):
+    """MCPyLib Map Art - Create Minecraft map art from images
+
+    Example usage:
+
+        mcpylib-map-art image.jpg
+
+        mcpylib-map-art image.jpg --mode 3d --size 256
+
+        mcpylib-map-art image.jpg --ip 192.168.1.100 --port 25565
+    """
     print("=" * 60)
-    print("Minecraft Image Drawer - Modern Map Art Algorithm")
+    print("MCPyLib Map Art - Modern Map Art Algorithm")
     print("=" * 60)
+
+    # Get configuration from environment variables or command line
+    server_ip = ip or os.getenv('SERVER_IP', '127.0.0.1')
+    server_port = port or int(os.getenv('SERVER_PORT', '65535'))
+    server_token = token or os.getenv('SERVER_TOKEN', '')
+
+    if not server_token:
+        click.echo("Error: No authentication token provided!", err=True)
+        click.echo("Set SERVER_TOKEN environment variable or use --token option", err=True)
+        sys.exit(1)
 
     # Connection
-    print("\nServer Connection:")
-    ip = "127.0.0.1"
-    port = 65535
-    token = '6CLlRIvEvzzKJMFuT7__k8DqaKm4j4LynduhYH6DJu0'
+    print(f"\nConnecting to server: {server_ip}:{server_port}")
+    drawer = MinecraftImageDrawer(ip=server_ip, port=server_port, token=server_token)
 
-    drawer = MinecraftImageDrawer(ip=ip, port=port, token=token)
-
-    # Image settings
-    image_path = "test.jpg"
-    size = 512
-    num_colors = 61
-
-    # Orientation
-    print("\nOrientation options:")
-    print("  h  - Horizontal flat (2D)")
-    print("  hh - Horizontal 3D (full height range Y=-60 to 319)")
-    print("  v  - Vertical")
-    orientation = input("\nChoose orientation (default: h): ").strip().lower() or "h"
-
-    # Coordinates
-    start_x, start_y, start_z = drawer.mc.getPos("TLSChannel")
-
-    # Draw
-    if orientation == 'v':
-        drawer.draw_vertical(image_path, size, start_x,
-                             start_y, start_z, num_colors=num_colors)
-    elif orientation == 'hh':
-        # 3D horizontal mode uses full Y range (-60 to 319)
-        print("\nUsing 3D mode with full height range!")
-        drawer.draw_horizontal_3d(image_path, size, start_x,
-                                  start_z, num_colors=num_colors)
+    # Get coordinates
+    if x is not None and y is not None and z is not None:
+        start_x, start_y, start_z = x, y, z
+        print(f"Using specified coordinates: ({start_x}, {start_y}, {start_z})")
     else:
-        # Flat horizontal mode
+        try:
+            start_x, start_y, start_z = drawer.mc.getPos(player)
+            print(f"Using {player}'s position: ({start_x}, {start_y}, {start_z})")
+        except Exception as e:
+            click.echo(f"Error: Could not get player position: {e}", err=True)
+            click.echo("Use --x, --y, --z options to specify coordinates manually", err=True)
+            sys.exit(1)
+
+    # Draw based on mode
+    print(f"\nImage: {image_path}")
+    print(f"Max size: {size} blocks")
+    print(f"Colors: {colors}")
+    print(f"Mode: {mode}")
+
+    if mode == 'vertical':
+        drawer.draw_vertical(image_path, size, start_x, start_y, start_z, num_colors=colors)
+    elif mode == '3d':
+        print("\nUsing 3D mode with full height range!")
+        drawer.draw_horizontal_3d(image_path, size, start_x, start_z, num_colors=colors)
+    else:
         print("\nUsing flat 2D mode!")
-        drawer.draw_horizontal(image_path, size, start_x,
-                               start_y, start_z, num_colors=num_colors)
+        drawer.draw_horizontal(image_path, size, start_x, start_y, start_z, num_colors=colors)
 
     print("\nDone! Check your Minecraft world.")
 
 
 if __name__ == "__main__":
-    main()
+    cli()
