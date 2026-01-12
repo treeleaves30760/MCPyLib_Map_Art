@@ -1,6 +1,6 @@
-# Minecraft Image Drawer
+# Minecraft Map Art Drawer
 
-Draw images in Minecraft using mcpylib! This program converts any image into Minecraft blocks and places them in your world either horizontally (on the ground) or vertically (like a wall).
+Draw Map Art in Minecraft using mcpylib! This program converts any image into Minecraft blocks and places them in your world either horizontally (on the ground) or vertically (like a wall).
 
 ## Features
 
@@ -237,4 +237,25 @@ Applies a **3x3 median filter** to remove noise:
 
 ## License
 
-See LICENSE file for details.
+This project is licensed under a **Dual License** model:
+
+### Non-Commercial Use (Free)
+✅ **FREE** for personal, educational (non-profit), research, and open-source projects
+- Personal hobby projects
+- Non-profit educational institutions for teaching
+- Academic research
+- Community projects
+
+### Commercial Use (Authorization Required)
+⚠️ **AUTHORIZATION REQUIRED** for commercial purposes, including:
+- Paid tutoring/cram schools (補習班)
+- For-profit training courses
+- Commercial educational programs
+- Business or for-profit entities
+- Revenue-generating services
+
+**For commercial use authorization, please contact:**
+📧 treeleaves30760@gmail.com
+🔗 https://github.com/treeleaves30760/MCPyLib_Map_Art
+
+See the [LICENSE](LICENSE) file for complete terms and conditions.
