@@ -112,6 +112,62 @@ class MinecraftImageDrawer:
 
         return closest_block, closest_color
 
+    def calculate_brightness(self, rgb):
+        """Calculate perceived brightness of an RGB color
+
+        Uses luminance formula: 0.299*R + 0.587*G + 0.114*B
+        Returns value between 0.0 and 1.0
+        """
+        r, g, b = rgb[0], rgb[1], rgb[2]
+        brightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+        return brightness
+
+    def get_map_tone(self, brightness):
+        """Determine map tone based on brightness for staircase algorithm
+
+        Minecraft maps have 4 tones per color, controlled by height differences:
+        - dark: block is 1 level LOWER than previous
+        - normal: block is at SAME level as previous
+        - light: block is 1 level HIGHER than previous
+
+        Args:
+            brightness: Float between 0.0 and 1.0
+
+        Returns:
+            String: "dark", "normal", or "light"
+        """
+        if brightness < 0.33:
+            return "dark"
+        elif brightness < 0.67:
+            return "normal"
+        else:
+            return "light"
+
+    def get_height_change(self, brightness, tone):
+        """Calculate height change with aggressive reset strategy
+
+        Uses brightness to determine height change.
+        Returns special value -999 to indicate reset to Y=-60.
+
+        Args:
+            brightness: Float between 0.0 and 1.0
+            tone: "dark", "normal", or "light"
+
+        Returns:
+            Integer: height change amount, or -999 to reset to Y=-60
+        """
+        if tone == "light":
+            return 1  # Ascend 1 level
+        elif tone == "normal":
+            return 0  # Stay same
+        else:  # dark
+            # Aggressive reset to Y=-60 for darker colors
+            # More frequent triggers for better height control
+            if brightness < 0.25:  # 25% threshold - more frequent
+                return -999  # Special value: reset to Y=-60
+            else:
+                return -1  # Normal descent 1 level
+
     def quantize_with_kmeans(self, img_array, num_colors=35):
         """Modern Minecraft map art algorithm: k-means color quantization
 
@@ -167,6 +223,118 @@ class MinecraftImageDrawer:
 
         return output
 
+    def clear_area(self, start_x, start_z, width, height, border=16, max_blocks_per_chunk=100000):
+        """Clear the build area from Y=-60 to Y=319 with border, in chunks
+
+        Due to server limitations, clears in chunks of max 100,000 blocks at a time.
+
+        Args:
+            start_x, start_z: Starting X and Z coordinates
+            width: Width of the image area
+            height: Height (depth) of the image area
+            border: Additional border to clear (default 16 blocks)
+            max_blocks_per_chunk: Maximum blocks to clear per operation (default 100,000)
+        """
+        print(f"\n=== Clearing Build Area ===")
+        print(f"Main area: {width}x{height} blocks")
+        print(f"Border: {border} blocks on each side")
+        print(f"Y range: -60 to 319 (380 blocks height)")
+
+        # Calculate extended area with border
+        clear_x = start_x - border
+        clear_y_min = -60
+        clear_y_max = 319
+        clear_z = start_z - border
+        clear_width = width + 2 * border
+        clear_height = height + 2 * border
+        total_y_range = 380  # Y range: -60 to 319
+
+        total_blocks = clear_width * total_y_range * clear_height
+        print(f"Clearing from ({clear_x}, {clear_y_min}, {clear_z})")
+        print(f"Size: {clear_width}x{total_y_range}x{clear_height} blocks")
+        print(f"Total blocks to clear: {total_blocks:,}")
+
+        try:
+            # Calculate chunk size
+            xz_area = clear_width * clear_height
+
+            # Check if we need to split horizontally (XZ) as well
+            if xz_area > max_blocks_per_chunk:
+                # Even one Y level is too large, need to split XZ area
+                print(f"XZ area ({xz_area:,} blocks) exceeds chunk limit!")
+                print(f"Splitting horizontally into smaller regions...\n")
+
+                # Calculate how many Z slices we need
+                z_per_chunk = max(1, max_blocks_per_chunk // clear_width)
+                num_z_chunks = (clear_height + z_per_chunk - 1) // z_per_chunk
+
+                total_cleared = 0
+                chunk_count = 0
+
+                for y_start in range(clear_y_min, clear_y_max + 1):
+                    for z_chunk_idx in range(num_z_chunks):
+                        z_start = z_chunk_idx * z_per_chunk
+                        z_count = min(z_per_chunk, clear_height - z_start)
+
+                        blocks_this_chunk = clear_width * 1 * z_count
+                        chunk_count += 1
+
+                        if chunk_count % 100 == 1:  # Show progress every 100 chunks
+                            print(f"Chunk {chunk_count}: Y={y_start}, Z={z_start} to {z_start + z_count - 1} ({blocks_this_chunk:,} blocks)")
+
+                        # Create air blocks for this slice
+                        air_blocks = []
+                        for x in range(clear_width):
+                            x_layer = [["air" for _ in range(z_count)]]
+                            air_blocks.append(x_layer)
+
+                        # Clear this chunk
+                        count = self.mc.edit(clear_x, y_start, clear_z + z_start, air_blocks)
+                        total_cleared += count
+
+                print(f"\nTotal chunks: {chunk_count}")
+                print(f"Total cleared: {total_cleared:,} blocks successfully!\n")
+            else:
+                # XZ area fits in chunk limit, split by Y levels
+                y_levels_per_chunk = max(1, max_blocks_per_chunk // xz_area)
+                num_chunks = (total_y_range + y_levels_per_chunk - 1) // y_levels_per_chunk
+
+                print(f"Splitting into {num_chunks} chunks ({y_levels_per_chunk} Y-levels per chunk)")
+                print(f"Max {max_blocks_per_chunk:,} blocks per chunk\n")
+
+                total_cleared = 0
+                current_y = clear_y_min
+
+                for chunk_idx in range(num_chunks):
+                    # Calculate Y range for this chunk
+                    y_start = current_y
+                    y_levels_this_chunk = min(y_levels_per_chunk, clear_y_max - current_y + 1)
+                    y_end = y_start + y_levels_this_chunk - 1
+
+                    blocks_this_chunk = clear_width * y_levels_this_chunk * clear_height
+
+                    print(f"Chunk {chunk_idx + 1}/{num_chunks}: Y={y_start} to Y={y_end} ({blocks_this_chunk:,} blocks)")
+
+                    # Create air blocks structure for this chunk
+                    air_blocks = []
+                    for x in range(clear_width):
+                        x_layer = []
+                        for y in range(y_levels_this_chunk):
+                            z_layer = ["air"] * clear_height
+                            x_layer.append(z_layer)
+                        air_blocks.append(x_layer)
+
+                    # Clear this chunk
+                    count = self.mc.edit(clear_x, y_start, clear_z, air_blocks)
+                    total_cleared += count
+                    print(f"  Cleared {count:,} blocks")
+
+                    current_y += y_levels_this_chunk
+
+                print(f"\nTotal cleared: {total_cleared:,} blocks successfully!\n")
+        except Exception as e:
+            print(f"Error clearing area: {e}\n")
+
     def load_and_resize_image(self, image_path, max_size):
         """Load and resize image"""
         if not os.path.exists(image_path):
@@ -188,10 +356,19 @@ class MinecraftImageDrawer:
             print(f"Error loading image: {e}")
             sys.exit(1)
 
-    def draw_horizontal(self, image_path, size, start_x, start_y, start_z, num_colors=35):
-        """Draw horizontally with k-means quantization"""
+    def draw_horizontal(self, image_path, size, start_x, start_y, start_z, num_colors=35, max_blocks_per_chunk=100000):
+        """Draw horizontally with k-means quantization (flat 2D version)
+
+        This method creates a flat 2D map art at a single Y level.
+        - X axis: image width
+        - Y axis: single level (flat)
+        - Z axis: image height (depth)
+
+        Places blocks in chunks of max 100,000 blocks to avoid server overload.
+        """
         print(f"\n{'='*60}")
-        print(f"Drawing HORIZONTAL at ({start_x}, {start_y}, {start_z})")
+        print(f"Drawing FLAT HORIZONTAL MAP ART")
+        print(f"Position: ({start_x}, {start_y}, {start_z})")
         print(f"{'='*60}")
 
         img = self.load_and_resize_image(image_path, size)
@@ -201,12 +378,12 @@ class MinecraftImageDrawer:
         img_array = np.array(img)
         img_array = self.quantize_with_kmeans(img_array, num_colors=num_colors)
 
-        # Convert to blocks
-        print(f"\nConverting to Minecraft blocks...")
+        # Convert to blocks (flat 2D)
+        print(f"\nConverting to Minecraft blocks (flat)...")
         blocks = []
         for x in range(width):
             x_layer = []
-            for y in range(1):
+            for y in range(1):  # Only one Y level
                 z_layer = []
                 for z in range(height):
                     pixel = tuple(img_array[z, x])
@@ -215,14 +392,200 @@ class MinecraftImageDrawer:
                 x_layer.append(z_layer)
             blocks.append(x_layer)
 
-        # Place blocks
+        # Place blocks in chunks
         try:
+            total_blocks = width * height
             print(f"\nPlacing {width}x{height} blocks in Minecraft...")
-            count = self.mc.edit(start_x, start_y, start_z, blocks)
+            print(f"Splitting placement into chunks of max {max_blocks_per_chunk:,} blocks...\n")
+
+            # Calculate how many X columns fit in one chunk
+            x_per_chunk = max(1, max_blocks_per_chunk // height)
+            num_chunks = (width + x_per_chunk - 1) // x_per_chunk
+
+            print(f"Columns per chunk: {x_per_chunk}")
+            print(f"Total chunks: {num_chunks}\n")
+
+            total_placed = 0
+            for chunk_idx in range(num_chunks):
+                x_start = chunk_idx * x_per_chunk
+                x_count = min(x_per_chunk, width - x_start)
+                x_end = x_start + x_count - 1
+
+                # Extract chunk
+                chunk_blocks = blocks[x_start:x_start + x_count]
+                blocks_in_chunk = x_count * height
+
+                print(f"Chunk {chunk_idx + 1}/{num_chunks}: X={start_x + x_start} to {start_x + x_end} ({blocks_in_chunk:,} blocks)")
+
+                # Place chunk
+                count = self.mc.edit(start_x + x_start, start_y, start_z, chunk_blocks)
+                total_placed += count
+                print(f"  Placed {count:,} blocks")
+
             print(f"\n{'='*60}")
-            print(f"SUCCESS! Placed {count} blocks")
-            print(
-                f"Location: ({start_x}, {start_y}, {start_z}) to ({start_x + width}, {start_y}, {start_z + height})")
+            print(f"SUCCESS! Placed {total_placed:,} blocks total")
+            print(f"Location: ({start_x}, {start_y}, {start_z}) to ({start_x + width}, {start_y}, {start_z + height})")
+            print(f"{'='*60}")
+        except Exception as e:
+            print(f"Error: {e}")
+
+    def draw_horizontal_3d(self, image_path, size, start_x, start_z, num_colors=35, max_blocks_per_chunk=100000, staircase_mode="classic"):
+        """Draw horizontally with staircase algorithm for Minecraft map art (3D version)
+
+        This method creates 3D map art using the staircase algorithm:
+        - Each pixel's height is relative to the previous pixel
+        - Height changes based on brightness tone (dark/normal/light)
+        - Creates natural staircase patterns
+
+        Args:
+            staircase_mode: "classic" (common base at Y=0) or "valley" (pull valleys down)
+        """
+        print(f"\n{'='*60}")
+        print(f"Drawing 3D STAIRCASE MAP ART")
+        print(f"Staircase mode: {staircase_mode}")
+        print(f"Position: ({start_x}, variable Y, {start_z})")
+        print(f"{'='*60}")
+
+        img = self.load_and_resize_image(image_path, size)
+        width, height = img.size
+
+        # Clear the area first (including 16-block border)
+        self.clear_area(start_x, start_z, width, height, border=16)
+
+        # Apply k-means quantization
+        img_array = np.array(img)
+        img_array = self.quantize_with_kmeans(img_array, num_colors=num_colors)
+
+        # Build physical structure using staircase algorithm
+        print(f"\nBuilding staircase structure...")
+        print(f"Using absolute brightness for tone calculation")
+
+        # Store physical blocks for each column
+        physical_columns = []
+        tone_stats = {"dark": 0, "normal": 0, "light": 0}
+        reset_count = 0  # Track how many times we reset to Y=-60
+
+        # Minecraft world limits
+        world_min_y = -60
+        world_max_y = 319
+        world_height_limit = world_max_y - world_min_y + 1  # 380 levels
+
+        for x in range(width):
+            if x % 50 == 0:
+                print(f"  Progress: {x}/{width} columns...")
+
+            column_blocks = []
+            current_height = world_min_y  # Start at Y=-60 directly
+
+            for z in range(height):
+                pixel = tuple(img_array[z, x])
+                block, _ = self.get_closest_block(pixel)
+
+                # Determine tone based on absolute brightness
+                brightness = self.calculate_brightness(pixel)
+                tone = self.get_map_tone(brightness)
+
+                # Get height change with aggressive reset strategy
+                height_change = self.get_height_change(brightness, tone)
+
+                # Check for reset signal
+                if height_change == -999:
+                    # Reset to bottom for dark colors
+                    current_height = world_min_y
+                    if x == 0:  # Count resets once
+                        reset_count += 1
+                else:
+                    # Normal height change
+                    current_height += height_change
+
+                    # Apply wraparound if needed (during building, not after)
+                    if current_height > world_max_y:
+                        current_height = world_min_y + (current_height - world_max_y - 1)
+                    elif current_height < world_min_y:
+                        current_height = world_max_y + (current_height - world_min_y + 1)
+
+                # Store block with its position
+                column_blocks.append({
+                    'x': x,
+                    'y': current_height,
+                    'z': z,
+                    'block': block,
+                    'tone': tone,
+                    'brightness': brightness
+                })
+
+                if x == 0:  # Count statistics once
+                    tone_stats[tone] += 1
+
+            physical_columns.append(column_blocks)
+
+        # Print tone statistics
+        total_pixels = width * height
+        print(f"\n=== Tone Distribution ===")
+        print(f"  Dark:   {tone_stats['dark']:6d} pixels ({tone_stats['dark']/total_pixels*100:5.1f}%)")
+        print(f"  Normal: {tone_stats['normal']:6d} pixels ({tone_stats['normal']/total_pixels*100:5.1f}%)")
+        print(f"  Light:  {tone_stats['light']:6d} pixels ({tone_stats['light']/total_pixels*100:5.1f}%)")
+
+        print(f"\n=== Height Control ===")
+        print(f"  Resets to Y=-60: {reset_count} times ({reset_count/total_pixels*100:5.1f}%)")
+        print(f"  This helps control maximum height and creates depth")
+
+        # Find overall min/max Y (already adjusted per column)
+        all_y_values = [block['y'] for column in physical_columns for block in column]
+        min_y = min(all_y_values)
+        max_y = max(all_y_values)
+        y_range = max_y - min_y + 1
+
+        print(f"\n  Final Y range: {min_y} to {max_y} ({y_range} levels)")
+        print(f"  Each column individually adjusted to fit within world limits")
+
+        # Convert to blocks array format
+        print(f"\nConverting to block array...")
+        blocks = []
+        for x in range(width):
+            x_layer = []
+            for y_level in range(y_range):
+                z_layer = ["air"] * height
+                x_layer.append(z_layer)
+
+            # Fill in actual blocks
+            for block_info in physical_columns[x]:
+                y_index = block_info['y'] - min_y
+                z_index = block_info['z']
+                x_layer[y_index][z_index] = block_info['block']
+
+            blocks.append(x_layer)
+
+        # Place blocks in chunks
+        try:
+            print(f"\nPlacing {width}x{y_range}x{height} blocks in Minecraft...")
+            print(f"Splitting placement into chunks of max {max_blocks_per_chunk:,} blocks...\n")
+
+            blocks_per_column = y_range * height
+            x_per_chunk = max(1, max_blocks_per_chunk // blocks_per_column)
+            num_chunks = (width + x_per_chunk - 1) // x_per_chunk
+
+            print(f"Columns per chunk: {x_per_chunk}")
+            print(f"Total chunks: {num_chunks}\n")
+
+            total_placed = 0
+            for chunk_idx in range(num_chunks):
+                x_start = chunk_idx * x_per_chunk
+                x_count = min(x_per_chunk, width - x_start)
+                x_end = x_start + x_count - 1
+
+                chunk_blocks = blocks[x_start:x_start + x_count]
+                blocks_in_chunk = x_count * y_range * height
+
+                print(f"Chunk {chunk_idx + 1}/{num_chunks}: X={start_x + x_start} to {start_x + x_end} ({blocks_in_chunk:,} blocks)")
+
+                count = self.mc.edit(start_x + x_start, min_y, start_z, chunk_blocks)
+                total_placed += count
+                print(f"  Placed {count:,} blocks")
+
+            print(f"\n{'='*60}")
+            print(f"SUCCESS! Placed {total_placed:,} blocks total")
+            print(f"Location: ({start_x}, {min_y}, {start_z}) to ({start_x + width}, {max_y}, {start_z + height})")
             print(f"{'='*60}")
         except Exception as e:
             print(f"Error: {e}")
@@ -283,8 +646,11 @@ def main():
     num_colors = 61
 
     # Orientation
-    orientation = input(
-        "\nDraw horizontal (h) or vertical (v)? (default: h): ").strip().lower() or "h"
+    print("\nOrientation options:")
+    print("  h  - Horizontal flat (2D)")
+    print("  hh - Horizontal 3D (full height range Y=-60 to 319)")
+    print("  v  - Vertical")
+    orientation = input("\nChoose orientation (default: h): ").strip().lower() or "h"
 
     # Coordinates
     start_x, start_y, start_z = drawer.mc.getPos("TLSChannel")
@@ -293,7 +659,14 @@ def main():
     if orientation == 'v':
         drawer.draw_vertical(image_path, size, start_x,
                              start_y, start_z, num_colors=num_colors)
+    elif orientation == 'hh':
+        # 3D horizontal mode uses full Y range (-60 to 319)
+        print("\nUsing 3D mode with full height range!")
+        drawer.draw_horizontal_3d(image_path, size, start_x,
+                                  start_z, num_colors=num_colors)
     else:
+        # Flat horizontal mode
+        print("\nUsing flat 2D mode!")
         drawer.draw_horizontal(image_path, size, start_x,
                                start_y, start_z, num_colors=num_colors)
 
