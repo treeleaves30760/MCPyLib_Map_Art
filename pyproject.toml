@@ -29,4 +29,4 @@ dependencies = [
 ]
 
 [project.scripts]
-mcpylib-map-art = "main:cli"
+mcpylib-map-art = "map_art.cli:cli"

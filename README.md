@@ -6,14 +6,12 @@ Draw Map Art in Minecraft using mcpylib! This program converts any image into Mi
 
 - Load any image format (PNG, JPG, GIF, etc.)
 - Automatically resize images while maintaining aspect ratio
-- **Advanced color processing algorithms:**
-  - **Floyd-Steinberg dithering** - Creates smooth color transitions and gradients
-  - **LAB color space matching** - Perceptually accurate color selection
-  - **Median filtering** - Removes isolated pixels and noise
-- Enhanced color palette with 85+ blocks for accurate representation
+- **K-Means color quantization** - Finds the most important colors in the image and maps them to Minecraft blocks
+- Official Minecraft map color palette with 61 distinct colors
+- RGB Euclidean distance for accurate color matching
 - Draw horizontally (XZ plane) or vertically (XY plane)
 - High-performance bulk placement using mcpylib's `edit()` method
-- Interactive command-line interface
+- CLI interface with environment variable support
 
 ## Installation
 
@@ -23,9 +21,10 @@ git clone https://github.com/treeleaves30760/MCPyLib_Map_Art.git
 cd MCPyLib_Map_Art
 ```
 
-2. Install dependencies using uv:
+2. Install dependencies and the CLI tool using uv:
 ```bash
 uv sync
+uv pip install -e .
 ```
 
 Or with pip:
@@ -80,7 +79,7 @@ mcpylib-map-art image.jpg --x 100 --y 64 --z 200
 - `--ip` - Minecraft server IP (default: from SERVER_IP env)
 - `--port` - Minecraft server port (default: from SERVER_PORT env)
 - `--token` - Authentication token (default: from SERVER_TOKEN env)
-- `--player` - Player name to get position from (default: TLSChannel)
+- `--player` - Player name to get position from (default: NightTangerine)
 - `--size` - Maximum image size in blocks (default: 512)
 - `--colors` - Number of colors/k-means clusters (default: 61)
 - `--mode` - Drawing mode: `flat`, `3d`, or `vertical` (default: flat)
@@ -106,7 +105,7 @@ MCPyLib Map Art - Modern Map Art Algorithm
 
 Connecting to server: 127.0.0.1:65535
 Connected to Minecraft server at 127.0.0.1:65535
-Using TLSChannel's position: (100, 64, 200)
+Using NightTangerine's position: (100, 64, 200)
 
 Image: Logo.jpg
 Max size: 128 blocks
@@ -197,34 +196,27 @@ The program uses the **official Minecraft map color system** with 61 distinct co
 
 ```
 .
-├── main.py           # Main image drawer program
-├── pyproject.toml    # Project dependencies
-├── Documents.md      # mcpylib API documentation
-└── README.md         # This file
+├── main.py              # Entry point
+├── map_art/
+│   ├── __init__.py      # Package exports
+│   ├── cli.py           # CLI interface (click)
+│   ├── colors.py        # Minecraft color palette & color utilities
+│   ├── drawer.py        # MinecraftImageDrawer class (drawing methods)
+│   └── image.py         # Image loading & k-means quantization
+├── pyproject.toml       # Project dependencies
+├── Documents.md         # mcpylib API documentation
+└── README.md            # This file
 ```
 
-## Advanced Algorithms
+## Algorithm
 
-### Floyd-Steinberg Dithering
-The program uses **Floyd-Steinberg error diffusion dithering** to create smooth color transitions:
-- Distributes quantization error to neighboring pixels
-- Creates smooth gradients instead of harsh color bands
-- Prevents isolated white/colored pixels
-- Results in more coherent, natural-looking images
-
-### LAB Color Space Matching
-Instead of simple RGB distance, the program uses **perceptually uniform LAB color space**:
-- Matches how human eyes perceive color differences
-- More accurate color selection
-- Better handling of light/dark variations
-- Scientifically proven to be more accurate than RGB
-
-### Median Filtering
-Applies a **3x3 median filter** to remove noise:
-- Eliminates isolated single pixels
-- Preserves edges and important details
-- Creates more coherent color regions
-- Reduces visual noise
+### K-Means Color Quantization
+The program uses **k-means clustering** to produce clean, coherent map art:
+1. Finds the N most important colors in the image via k-means clustering
+2. Maps each cluster center to the closest Minecraft block color (RGB Euclidean distance)
+3. Replaces all pixels with their cluster's Minecraft color
+- Produces clean color regions without dithering noise
+- Configurable number of colors via `--colors` (default: 61)
 
 ## Requirements
 
@@ -232,7 +224,9 @@ Applies a **3x3 median filter** to remove noise:
 - mcpylib >= 1.0.0
 - Pillow >= 10.0.0
 - numpy >= 1.24.0
-- scipy >= 1.11.0
+- scikit-learn >= 1.3.0
+- click >= 8.1.0
+- python-dotenv >= 1.0.0
 - Minecraft server with mcpylib plugin installed
 
 ## License
