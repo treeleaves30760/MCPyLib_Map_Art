@@ -1,17 +1,39 @@
 # Minecraft Map Art Drawer
 
-Draw Map Art in Minecraft using mcpylib! This program converts any image into Minecraft blocks and places them in your world either horizontally (on the ground) or vertically (like a wall).
+Draw Map Art in Minecraft using mcpylib! This program converts any image into Minecraft blocks and places them in your world, fully leveraging the map's shade system for maximum colour accuracy.
 
 ## Features
 
 - Load any image format (PNG, JPG, GIF, etc.)
 - Automatically resize images while maintaining aspect ratio
-- **K-Means color quantization** - Finds the most important colors in the image and maps them to Minecraft blocks
-- Official Minecraft map color palette with 61 distinct colors
-- RGB Euclidean distance for accurate color matching
-- Draw horizontally (XZ plane) or vertically (XY plane)
+- **Accurate map colour system** - 60 base colours x 3 shades = **180 colours** in staircase mode
+- **Perceptual colour matching** using redmean weighted distance
+- **Floyd-Steinberg dithering** for smoother gradients
+- **Staircase map art** - uses block height differences to unlock the full shade palette
+- **Built-in simulator** - preview results and analyse quality without a Minecraft server
 - High-performance bulk placement using mcpylib's `edit()` method
 - CLI interface with environment variable support
+
+## How Minecraft Map Colours Work
+
+Each pixel on a Minecraft map is determined by **two factors**:
+
+| Factor | Description |
+|--------|-------------|
+| **Base colour** | Determined by block type (60 usable colours) |
+| **Shade** | Determined by height difference with the block to the **north (Z-1)** |
+
+The shade multiplies the base colour RGB values:
+
+| Shade | Multiplier | Trigger |
+|-------|-----------|---------|
+| Dark | x 180/255 (71%) | Current block **lower** than north neighbour |
+| Normal | x 220/255 (86%) | Current block **same height** as north neighbour |
+| Light | x 255/255 (100%) | Current block **higher** than north neighbour |
+
+This means:
+- **Flat mode** (all same height) = 60 colours (all shade "normal")
+- **Staircase mode** (varying heights) = **180 colours** (60 x 3 shades)
 
 ## Installation
 
@@ -46,151 +68,172 @@ SERVER_TOKEN=your_token_here
 
 ## Usage
 
-### Using the CLI Tool
+### Simulate (Preview Without Server)
 
-After installation, you can use the `mcpylib-map-art` command:
+Preview map art and compare quality metrics **without connecting to Minecraft**:
 
 ```bash
-# Basic usage (uses .env configuration)
-mcpylib-map-art image.jpg
+# Basic simulation (128x128 = one map)
+python main.py simulate photo.jpg
 
-# With uv
-uv run mcpylib-map-art image.jpg
+# Custom size and output directory
+python main.py simulate photo.jpg --size 256 --output-dir my_output
+```
 
-# Specify mode
-mcpylib-map-art image.jpg --mode 3d
+The simulator automatically tests all four algorithm variants and outputs:
 
-# Custom size and colors
-mcpylib-map-art image.jpg --size 256 --colors 35
+| Output File | Description |
+|-------------|-------------|
+| `*_original.png` | Resized input image |
+| `*_flat.png` | Flat mode result |
+| `*_flat_dither.png` | Flat mode + dithering |
+| `*_staircase.png` | Staircase mode result |
+| `*_staircase_dither.png` | Staircase mode + dithering |
+| `*_comparison.png` | Side-by-side comparison with error heatmaps |
+| `*_heightmap.png` | Staircase height visualisation |
+| `*_metrics.txt` | PSNR, SSIM, mean error, colour count |
 
-# Vertical wall drawing
-mcpylib-map-art image.jpg --mode vertical
+### Draw on Server
 
-# Override environment variables
-mcpylib-map-art image.jpg --ip 192.168.1.100 --port 25565 --token your_token
+```bash
+# Flat mode (simple, all blocks at same height)
+python main.py draw photo.jpg --mode flat
+
+# Staircase mode with dithering (best quality)
+python main.py draw photo.jpg --mode staircase --dither
+
+# Vertical wall art (not map art, just visual blocks)
+python main.py draw photo.jpg --mode vertical
+
+# Override server settings
+python main.py draw photo.jpg --ip 192.168.1.100 --port 25565 --token your_token
 
 # Specify coordinates manually
-mcpylib-map-art image.jpg --x 100 --y 64 --z 200
+python main.py draw photo.jpg --mode staircase --dither --x 100 --y 64 --z 200
 ```
 
 ### Command Options
 
-- `IMAGE_PATH` - Path to the image file (required)
-- `--ip` - Minecraft server IP (default: from SERVER_IP env)
-- `--port` - Minecraft server port (default: from SERVER_PORT env)
-- `--token` - Authentication token (default: from SERVER_TOKEN env)
-- `--player` - Player name to get position from (default: NightTangerine)
-- `--size` - Maximum image size in blocks (default: 512)
-- `--colors` - Number of colors/k-means clusters (default: 61)
-- `--mode` - Drawing mode: `flat`, `3d`, or `vertical` (default: flat)
-- `--x`, `--y`, `--z` - Starting coordinates (overrides player position)
+**`draw` subcommand:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `IMAGE_PATH` | Path to the image file | (required) |
+| `--mode` | `flat`, `staircase`, or `vertical` | `flat` |
+| `--dither` | Enable Floyd-Steinberg dithering | off |
+| `--size` | Maximum image size in blocks | `128` |
+| `--ip` | Server IP | `SERVER_IP` env |
+| `--port` | Server port | `SERVER_PORT` env |
+| `--token` | Auth token | `SERVER_TOKEN` env |
+| `--player` | Player name for position | `NightTangerine` |
+| `--x`, `--y`, `--z` | Starting coordinates | player position |
+
+**`simulate` subcommand:**
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `IMAGE_PATH` | Path to the image file | (required) |
+| `--size` | Maximum image size in pixels | `128` |
+| `--output-dir` | Output directory | `output/` |
 
 ### Environment Variables
 
-The tool supports the following environment variables (configured in `.env`):
-
-- `SERVER_IP` - Minecraft server IP address
-- `SERVER_PORT` - Minecraft server port
-- `SERVER_TOKEN` - MCPyLib authentication token
+| Variable | Description |
+|----------|-------------|
+| `SERVER_IP` | Minecraft server IP address |
+| `SERVER_PORT` | Minecraft server port |
+| `SERVER_TOKEN` | MCPyLib authentication token |
 
 Command-line options override environment variables.
-
-### Example Session
-
-```bash
-$ mcpylib-map-art Logo.jpg --mode flat --size 128
-============================================================
-MCPyLib Map Art - Modern Map Art Algorithm
-============================================================
-
-Connecting to server: 127.0.0.1:65535
-Connected to Minecraft server at 127.0.0.1:65535
-Using NightTangerine's position: (100, 64, 200)
-
-Image: Logo.jpg
-Max size: 128 blocks
-Colors: 61
-Mode: flat
-
-=== K-Means Color Quantization (Modern Map Art Algorithm) ===
-Reducing to 61 most important colors...
-
-[1/3] Finding dominant colors in image...
-[2/3] Mapping to Minecraft palette...
-[3/3] Applying quantization...
-
-Placing 128x96 blocks in Minecraft...
-SUCCESS! Placed 12,288 blocks total
-
-Done! Check your Minecraft world.
-```
 
 ## Drawing Modes
 
 ### Flat Mode (`--mode flat`)
-- Draws the image flat on the ground (XZ plane)
-- Perfect for pixel art floors, maps, or ground decorations
-- Y coordinate is constant (one layer thick)
-- Default mode
+- All blocks at the same Y height -> every pixel uses shade "normal"
+- Available palette: **60 colours**
+- Simple to build, no height variation needed
+- Add `--dither` for visually smoother gradients
 
-### 3D Mode (`--mode 3d`)
-- Creates 3D staircase map art with height variations
-- Uses brightness to determine height changes
-- Full height range from Y=-60 to Y=319
-- Perfect for realistic map art with depth and shading
+### Staircase Mode (`--mode staircase`)
+- Block heights vary to control shade per pixel
+- Available palette: **180 colours** (60 base x 3 shades)
+- A reference row is placed one block north to control the first row's shade
+- Heights are automatically centred within world limits (Y -60 to 319)
+- **Recommended mode** for best quality; combine with `--dither`
 
 ### Vertical Mode (`--mode vertical`)
-- Draws the image as a wall (XY plane)
-- Perfect for paintings, murals, or vertical pixel art
-- Z coordinate is constant (one block deep)
+- Draws the image as a wall on the XY plane
+- Not map art — just visual block placement
+- Useful for paintings, murals, or interior decoration
 
-## Color Mapping
+## Algorithm
 
-The program uses the **official Minecraft map color system** with 61 distinct colors, providing highly accurate color representation. Colors are automatically matched to the closest available block using Euclidean distance calculation in RGB color space.
+### Colour Matching Pipeline
 
-### Available Color Categories:
+```
+Input Image
+    |
+    v
+Resize to target size (LANCZOS)
+    |
+    v
+Build palette (60 or 180 colours depending on mode)
+    |
+    v
+For each pixel, find closest palette colour (redmean distance)
+    |                                |
+    v                                v
+  [no dither]                   [--dither]
+  Direct mapping          Floyd-Steinberg error diffusion
+    |                                |
+    v                                v
+        Block map + Shade map
+              |
+              v
+     Compute staircase heights (for staircase mode)
+              |
+              v
+        Place blocks in Minecraft
+```
 
-**Basic Colors (Concrete & Wool):**
-- White, Light Gray, Gray, Black
-- Red, Orange, Yellow
-- Lime, Green
-- Cyan, Light Blue, Blue
-- Purple, Magenta, Pink
-- Brown
+### Redmean Colour Distance
 
-**Terracotta Colors (Muted Tones):**
-- All basic colors in terracotta variants
-- Perfect for more subdued, natural-looking pixel art
+Instead of simple Euclidean RGB distance, we use the **redmean** approximation which better matches human colour perception:
 
-**Natural Blocks:**
-- Grass, Dirt, Sand, Stone, Wood
-- Podzol, Clay, Netherrack
-- Leaves, Ice, Snow
+```
+rmean = (R1 + R2) / 2
+d = (2 + rmean/256) * dR^2 + 4 * dG^2 + (2 + (255-rmean)/256) * dB^2
+```
 
-**Special Blocks:**
-- Gold Block, Diamond Block, Emerald Block, Lapis Block
-- Iron Block, Deepslate, Raw Iron
-- Crimson/Warped Nether blocks
-- Glow Lichen (unique greenish glow)
+### Floyd-Steinberg Dithering
 
-**Total: 61 unique colors** for maximum image accuracy!
+Error diffusion distributes quantisation error to neighbouring pixels, creating the visual illusion of more colours:
 
-## Tips
+```
+             pixel   7/16 ->
+   3/16      5/16    1/16
+```
 
-1. **Image Size**: Start with smaller sizes (32x32) for testing, then scale up
-2. **Color Accuracy**: The program now uses 61 official Minecraft colors for better accuracy
-3. **Complex Images**: With 61 colors, you can now render more detailed images with better color gradients
-4. **Coordinates**: Make sure you have space in your world for the image
-5. **Performance**: The `edit()` method can handle thousands of blocks at once
-6. **Vertical Drawings**: Good for building facades or interior decoration
-7. **Block Availability**: Some blocks like nether blocks, terracotta, and ores may require creative mode or resource gathering
+### Staircase Height Management
 
-## Troubleshooting
+For each column (fixed X), the algorithm:
+1. Determines the ideal shade for every row based on colour matching
+2. Computes cumulative height changes (light: +1, normal: 0, dark: -1)
+3. Centres the height range within world limits (Y -60 to 319)
+4. Places a reference block one row north to control the first row's shade
 
-- **Image not found**: Check that the file path is correct
-- **Connection failed**: Verify server IP, port, and token
-- **Out of bounds**: Check that coordinates are within your world limits
-- **Colors look wrong**: The program uses nearest color matching - simplify your image for better results
+## Quality Comparison
+
+Test results with a 128x128 image:
+
+| Mode | PSNR (dB) | SSIM | Mean Error | Colours Used |
+|------|-----------|------|------------|-------------|
+| Flat | 17.38 | 0.9470 | 58.82 | 29 |
+| Flat + Dither | 17.28 | 0.9284 | 59.69 | 40 |
+| **Staircase** | **29.69** | **0.9658** | **4.44** | 66 |
+| **Staircase + Dither** | **29.01** | **0.9577** | **5.08** | 85 |
+
+Staircase mode reduces mean colour error by **13x** compared to flat mode.
 
 ## Project Structure
 
@@ -199,24 +242,15 @@ The program uses the **official Minecraft map color system** with 61 distinct co
 ├── main.py              # Entry point
 ├── map_art/
 │   ├── __init__.py      # Package exports
-│   ├── cli.py           # CLI interface (click)
-│   ├── colors.py        # Minecraft color palette & color utilities
-│   ├── drawer.py        # MinecraftImageDrawer class (drawing methods)
-│   └── image.py         # Image loading & k-means quantization
+│   ├── cli.py           # CLI interface (click) - draw & simulate commands
+│   ├── colors.py        # Map palette, shade system, colour matching, dithering
+│   ├── drawer.py        # MinecraftImageDrawer (server block placement)
+│   ├── image.py         # Image loading & resizing
+│   └── simulator.py     # Offline simulation & quality analysis
 ├── pyproject.toml       # Project dependencies
 ├── Documents.md         # mcpylib API documentation
 └── README.md            # This file
 ```
-
-## Algorithm
-
-### K-Means Color Quantization
-The program uses **k-means clustering** to produce clean, coherent map art:
-1. Finds the N most important colors in the image via k-means clustering
-2. Maps each cluster center to the closest Minecraft block color (RGB Euclidean distance)
-3. Replaces all pixels with their cluster's Minecraft color
-- Produces clean color regions without dithering noise
-- Configurable number of colors via `--colors` (default: 61)
 
 ## Requirements
 
@@ -224,32 +258,31 @@ The program uses **k-means clustering** to produce clean, coherent map art:
 - mcpylib >= 1.0.0
 - Pillow >= 10.0.0
 - numpy >= 1.24.0
-- scikit-learn >= 1.3.0
+- scipy >= 1.10.0
 - click >= 8.1.0
 - python-dotenv >= 1.0.0
-- Minecraft server with mcpylib plugin installed
+- Minecraft server with mcpylib plugin installed (for drawing; simulator works offline)
+
+## Troubleshooting
+
+- **Image not found**: Check that the file path is correct
+- **Connection failed**: Verify server IP, port, and token in `.env`
+- **Out of bounds**: Check that coordinates are within your world limits
+- **Dithering is slow**: Normal for large images; use `--size 128` for faster processing
+- **Colours look wrong**: Use `--mode staircase --dither` for best accuracy; run `simulate` first to preview
 
 ## License
 
 This project is licensed under a **Dual License** model:
 
 ### Non-Commercial Use (Free)
-✅ **FREE** for personal, educational (non-profit), research, and open-source projects
-- Personal hobby projects
-- Non-profit educational institutions for teaching
-- Academic research
-- Community projects
+**FREE** for personal, educational (non-profit), research, and open-source projects.
 
 ### Commercial Use (Authorization Required)
-⚠️ **AUTHORIZATION REQUIRED** for commercial purposes, including:
-- Paid tutoring/cram schools (補習班)
-- For-profit training courses
-- Commercial educational programs
-- Business or for-profit entities
-- Revenue-generating services
+**AUTHORIZATION REQUIRED** for commercial purposes, including paid tutoring, for-profit training courses, commercial educational programs, business use, and revenue-generating services.
 
 **For commercial use authorization, please contact:**
-📧 treeleaves30760@gmail.com
-🔗 https://github.com/treeleaves30760/MCPyLib_Map_Art
+- Email: treeleaves30760@gmail.com
+- GitHub: https://github.com/treeleaves30760/MCPyLib_Map_Art
 
 See the [LICENSE](LICENSE) file for complete terms and conditions.

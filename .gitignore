@@ -12,5 +12,12 @@ wheels/
 # Environment variables
 .env
 
+# Simulator output
+output/
+output_*/
+
+# Test files
+test_*.png
+
 # Claude files
 .claude/*
